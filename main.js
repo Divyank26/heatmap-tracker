@@ -70,8 +70,20 @@ function renderHeatmap(rows) {
 
     cell.className = cls;
 
-    cell.title =
-      `${count} completed tasks on ${date}`;
+   cell.title =
+  `${count} completed tasks on ${date}`;
+
+    // highlight selected date
+    if (date === selectedDate) {
+        cell.style.outline = '2px solid #24292e';
+    }
+
+    cell.addEventListener('click', () => {
+    selectedDate = date;
+
+    renderHeatmap(rows);
+    renderTasks(rows);
+    });
 
     heatmap.appendChild(cell);
   }
