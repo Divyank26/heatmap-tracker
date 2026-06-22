@@ -20,6 +20,8 @@ const currentStreakEl =
 const bestStreakEl =
   document.getElementById('best-streak');
 
+const monthLabels =
+  document.getElementById('month-labels');
 function formatDate(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -49,6 +51,7 @@ let selectedDate = formatDate(new Date());
 async function loadTasks() {
   const rows = await db.select('SELECT * FROM tasks');
 
+  renderMonthLabels();
   renderHeatmap(rows);
   renderTasks(rows);
   renderStreaks(rows);
@@ -149,51 +152,105 @@ function renderStreaks(rows) {
     bestStreak;
 }
 
+function renderMonthLabels() {
+  monthLabels.innerHTML = '';
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Find the start date (364 days ago)
+  const startDate = new Date(today);
+  startDate.setDate(startDate.getDate() - 364);
+  const startDayOfWeek = startDate.getDay(); // 0=Sun ... 6=Sat
+
+  // Total columns needed
+  const totalCells = 365 + startDayOfWeek;
+  const totalCols = Math.ceil(totalCells / 7);
+
+  // Build a map: column index → month name
+  // We want the label to appear at the column where the 1st of a month falls
+  const monthMap = new Map();
+
+  for (let i = 364; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+
+    if (d.getDate() === 1) {
+      const month = d.toLocaleString('default', { month: 'short' });
+      // cellIndex in the flat grid (with padding)
+      const cellIndex = (364 - i) + startDayOfWeek;
+      const col = Math.floor(cellIndex / 7);
+      if (!monthMap.has(month)) {
+        monthMap.set(month, col);
+      }
+    }
+  }
+
+  // Create one div per column
+  for (let i = 0; i < totalCols; i++) {
+    const slot = document.createElement('div');
+    // If this column has a month label, add it
+    if (monthMap.has([...monthMap.keys()].find(k => monthMap.get(k) === i))) {
+      const month = [...monthMap.keys()].find(k => monthMap.get(k) === i);
+      const label = document.createElement('span');
+      label.textContent = month;
+      label.className = 'month-label';
+      slot.appendChild(label);
+    }
+    monthLabels.appendChild(slot);
+  }
+}
+
 function renderHeatmap(rows) {
   heatmap.innerHTML = '';
 
   const counts = {};
-
   rows.forEach(task => {
     if (!task.completed) return;
-
-    counts[task.date] =
-      (counts[task.date] || 0) + 1;
+    counts[task.date] = (counts[task.date] || 0) + 1;
   });
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // How many days offset so column 0 starts on Sunday
+  const startDate = new Date(today);
+  startDate.setDate(startDate.getDate() - 364);
+  const startDayOfWeek = startDate.getDay(); // 0=Sun, 6=Sat
+
+  // Add transparent padding cells so first real day lands on correct row
+  for (let p = 0; p < startDayOfWeek; p++) {
+    const empty = document.createElement('div');
+    empty.className = 'cell cell-empty';
+    heatmap.appendChild(empty);
+  }
+
+  // Render 365 actual day cells
   for (let i = 364; i >= 0; i--) {
-    const d = new Date();
-
+    const d = new Date(today);
     d.setDate(d.getDate() - i);
-
     const date = formatDate(d);
 
     const count = counts[date] || 0;
-
     const cell = document.createElement('div');
 
     let cls = 'cell';
-
     if (count >= 1) cls += ' lvl-1';
     if (count >= 3) cls += ' lvl-2';
     if (count >= 5) cls += ' lvl-3';
     if (count >= 8) cls += ' lvl-4';
 
     cell.className = cls;
+    cell.title = `${count} completed tasks on ${date}`;
 
-   cell.title =
-  `${count} completed tasks on ${date}`;
-
-    // highlight selected date
     if (date === selectedDate) {
-        cell.style.outline = '2px solid #24292e';
+      cell.style.outline = '2px solid #24292e';
     }
 
     cell.addEventListener('click', () => {
-    selectedDate = date;
-
-    renderHeatmap(rows);
-    renderTasks(rows);
+      selectedDate = date;
+      renderHeatmap(rows);
+      renderTasks(rows);
     });
 
     heatmap.appendChild(cell);
