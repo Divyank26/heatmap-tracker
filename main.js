@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS tasks (
 const heatmap = document.getElementById('heatmap');
 const taskList = document.getElementById('task-list');
 const taskInput = document.getElementById('task-input');
+const currentStreakEl =
+  document.getElementById('current-streak');
+
+const bestStreakEl =
+  document.getElementById('best-streak');
 
 function formatDate(date) {
   const y = date.getFullYear();
@@ -21,6 +26,16 @@ function formatDate(date) {
   const d = String(date.getDate()).padStart(2, '0');
 
   return `${y}-${m}-${d}`;
+}
+
+function getDateDaysAgo(days) {
+  const d = new Date();
+
+  d.setHours(0, 0, 0, 0);
+
+  d.setDate(d.getDate() - days);
+
+  return formatDate(d);
 }
 
 function escapeHtml(text) {
@@ -36,6 +51,102 @@ async function loadTasks() {
 
   renderHeatmap(rows);
   renderTasks(rows);
+  renderStreaks(rows);
+}
+
+function calculateStreaks(rows) {
+
+  const completedDates = new Set();
+
+  rows.forEach(task => {
+    if (task.completed) {
+      completedDates.add(task.date);
+    }
+  });
+
+  let currentStreak = 0;
+
+  let today = getDateDaysAgo(0);
+
+  let yesterday = getDateDaysAgo(1);
+
+  const startDate =
+    completedDates.has(today)
+      ? today
+      : completedDates.has(yesterday)
+      ? yesterday
+      : null;
+
+  if (startDate) {
+
+    let offset = 0;
+
+    while (true) {
+
+      const d = getDateDaysAgo(offset);
+
+      if (!completedDates.has(d))
+        break;
+
+      currentStreak++;
+
+      offset++;
+    }
+  }
+
+  let bestStreak = 0;
+
+  const sortedDates =
+    [...completedDates].sort();
+
+  let streak = 1;
+
+  for (let i = 1; i < sortedDates.length; i++) {
+
+    const prev =
+      new Date(sortedDates[i - 1]);
+
+    const curr =
+      new Date(sortedDates[i]);
+
+    const diffDays =
+      (curr - prev) /
+      (1000 * 60 * 60 * 24);
+
+    if (diffDays === 1) {
+
+      streak++;
+
+    } else {
+
+      bestStreak =
+        Math.max(bestStreak, streak);
+
+      streak = 1;
+    }
+  }
+
+  bestStreak =
+    Math.max(bestStreak, streak);
+
+  return {
+    currentStreak,
+    bestStreak
+  };
+}
+
+function renderStreaks(rows) {
+
+  const {
+    currentStreak,
+    bestStreak
+  } = calculateStreaks(rows);
+
+  currentStreakEl.textContent =
+    currentStreak;
+
+  bestStreakEl.textContent =
+    bestStreak;
 }
 
 function renderHeatmap(rows) {
