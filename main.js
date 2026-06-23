@@ -1,4 +1,9 @@
 import Database from '@tauri-apps/plugin-sql';
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification
+} from '@tauri-apps/plugin-notification';
 
 const db = await Database.load('sqlite:heatmap.db');
 
@@ -8,6 +13,13 @@ CREATE TABLE IF NOT EXISTS tasks (
   date TEXT NOT NULL,
   text TEXT NOT NULL,
   completed INTEGER DEFAULT 0
+)
+`);
+
+await db.execute(`
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
 )
 `);
 
@@ -44,6 +56,36 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+async function getSetting(key) {
+
+  const result = await db.select(
+    `
+    SELECT value
+    FROM settings
+    WHERE key = $1
+    `,
+    [key]
+  );
+
+  return result[0]?.value ?? null;
+}
+
+async function setSetting(
+  key,
+  value
+) {
+
+  await db.execute(
+    `
+    INSERT INTO settings (key, value)
+    VALUES ($1, $2)
+    ON CONFLICT(key)
+    DO UPDATE SET value = $2
+    `,
+    [key, value]
+  );
 }
 
 let selectedDate = formatDate(new Date());
@@ -347,4 +389,104 @@ taskInput.addEventListener('keydown', async (e) => {
   }
 });
 
+
+async function checkPendingTasksAndNotify() {
+
+  try {
+
+    const now = new Date();
+
+    const todayString =
+      formatDate(now);
+
+    // Only after 8 PM
+    if (now.getHours() < 20) {
+      return;
+    }
+
+    const lastNotificationDate =
+      await getSetting(
+        'lastNotificationDate'
+      );
+
+    // Already handled today
+    if (
+      lastNotificationDate ===
+      todayString
+    ) {
+      return;
+    }
+
+    const result =
+      await db.select(
+        `
+        SELECT COUNT(*) AS count
+        FROM tasks
+        WHERE date = $1
+        AND completed = 0
+        `,
+        [todayString]
+      );
+
+    const pendingCount =
+      Number(
+        result[0]?.count || 0
+      );
+
+    // No pending tasks
+    if (pendingCount === 0) {
+
+      await setSetting(
+        'lastNotificationDate',
+        todayString
+      );
+
+      return;
+    }
+
+    let permissionGranted =
+      await isPermissionGranted();
+
+    if (!permissionGranted) {
+
+      const permission =
+        await requestPermission();
+
+      permissionGranted =
+        permission === 'granted';
+    }
+
+    if (!permissionGranted) {
+      return;
+    }
+
+    await sendNotification({
+      title: 'Heatmap Tracker',
+      body:
+        `You still have ${pendingCount} pending task(s) today. Complete them before the day ends.`
+    });
+
+    await setSetting(
+      'lastNotificationDate',
+      todayString
+    );
+
+  } catch (error) {
+
+    console.error(
+      'Notification check failed:',
+      error
+    );
+  }
+}
+
 loadTasks();
+
+// Run immediately on startup
+checkPendingTasksAndNotify();
+
+// Check every minute
+setInterval(
+  checkPendingTasksAndNotify,
+  60000
+);
