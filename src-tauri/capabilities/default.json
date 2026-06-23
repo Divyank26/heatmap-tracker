@@ -5,7 +5,7 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-
+    "notification:default",
     "sql:allow-load",
     "sql:allow-execute",
     "sql:allow-select",
