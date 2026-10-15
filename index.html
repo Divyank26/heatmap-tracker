@@ -2,35 +2,65 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Heatmap Tracker</title>
-  <link rel="stylesheet" href="styles.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f6f8fb" />
+  <title>Dashboard · Heatmap Tracker</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#dashboard" aria-label="Heatmap Tracker home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span><strong>Heatmap</strong><small>TRACKER</small></span>
+      </a>
+      <div class="nav-label">WORKSPACE</div>
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="#dashboard" data-page="dashboard" class="nav-link active"><span class="nav-icon">⌂</span>Dashboard</a>
+        <a href="#heatmap" data-page="heatmap" class="nav-link"><span class="nav-icon">▦</span>Heatmap</a>
+        <a href="#analytics" data-page="analytics" class="nav-link"><span class="nav-icon">▤</span>Analytics</a>
+      </nav>
+      <div class="sidebar-bottom"><div class="avatar">HT</div><div><strong>Personal workspace</strong><small>Local SQLite data</small></div></div>
+    </aside>
 
-  <h1>Heatmap Tracker</h1>
+    <main class="main-content">
+      <header class="topbar"><div class="mobile-brand"><span class="brand-mark"><i></i><i></i><i></i><i></i></span> Heatmap Tracker</div><div class="breadcrumb">Workspace <span>/</span> <strong id="current-page-label">Dashboard</strong></div><div class="topbar-right"><span class="local-indicator"><i></i> Your data is stored locally</span><div class="avatar top-avatar">HT</div></div></header>
 
-  <div id="streak-container">
-    <div class="streak-card">
-      Current Streak: <span id="current-streak">0</span>
-    </div>
-    <div class="streak-card">
-      Best Streak: <span id="best-streak">0</span>
-    </div>
+      <section class="page-view active" data-view="dashboard">
+        <div class="page-heading"><div><p class="eyebrow" id="today-label">OVERVIEW</p><h1>Good to see you</h1><p class="subheading">Here’s a clear view of your progress and activity.</p></div><a class="button button-primary" href="#heatmap">View heatmap <span>→</span></a></div>
+        <div id="dashboard-error" class="notice error-notice" hidden></div>
+        <div class="kpi-grid">
+          <article class="kpi-card"><div class="kpi-top"><span>Total tasks</span><span class="kpi-icon blue">▤</span></div><div class="kpi-value" id="metric-total">—</div><div class="kpi-foot">Across all tracked dates</div></article>
+          <article class="kpi-card"><div class="kpi-top"><span>Completed</span><span class="kpi-icon green">✓</span></div><div class="kpi-value" id="metric-completed">—</div><div class="kpi-foot" id="metric-completed-foot">Tasks marked complete</div></article>
+          <article class="kpi-card"><div class="kpi-top"><span>Active days</span><span class="kpi-icon violet">▦</span></div><div class="kpi-value" id="metric-days">—</div><div class="kpi-foot">Days with a completed task</div></article>
+          <article class="kpi-card"><div class="kpi-top"><span>Completion rate</span><span class="kpi-icon amber">◌</span></div><div class="kpi-value" id="metric-rate">—</div><div class="kpi-foot">Completed out of all tasks</div></article>
+        </div>
+
+        <div class="content-grid dashboard-grid">
+          <section class="panel heatmap-panel"><div class="panel-heading"><div><h2>Activity heatmap</h2><p>Daily completed tasks over the past year</p></div><a class="text-link" href="#heatmap">Open heatmap <span>→</span></a></div><div class="heatmap-scroll"><div id="dashboard-month-labels" class="month-labels"></div><div id="dashboard-heatmap" class="heatmap"></div></div><div class="heatmap-legend"><span>Less</span><i class="legend-cell"></i><i class="legend-cell lvl-1"></i><i class="legend-cell lvl-2"></i><i class="legend-cell lvl-3"></i><i class="legend-cell lvl-4"></i><span>More</span></div></section>
+          <section class="panel trend-panel"><div class="panel-heading"><div><h2>Activity trend</h2><p>Completed tasks · last 14 days</p></div><span class="mini-badge">14 DAYS</span></div><div id="trend-chart" class="chart-wrap"></div><div class="chart-caption"><span><i class="dot green-dot"></i> Completed tasks</span><span id="trend-total">—</span></div></section>
+        </div>
+        <div class="content-grid lower-grid">
+          <section class="panel"><div class="panel-heading"><div><h2>Recent activity</h2><p>Latest tasks in your tracker</p></div><a class="text-link" href="#heatmap">Manage tasks <span>→</span></a></div><div class="table-wrap"><table><thead><tr><th>DATE</th><th>TASK</th><th>STATUS</th></tr></thead><tbody id="recent-activity"></tbody></table></div><div id="recent-empty" class="empty-state" hidden>No tasks yet. Add your first task from the Heatmap page.</div></section>
+          <section class="panel insight-panel"><div class="panel-heading"><div><h2>Your rhythm</h2><p>Based on completed tasks</p></div><span class="kpi-icon violet">✦</span></div><div class="insight-stat"><span>Current streak</span><strong><b id="dashboard-current-streak">0</b> days</strong></div><div class="insight-stat"><span>Best streak</span><strong><b id="dashboard-best-streak">0</b> days</strong></div><div class="insight-stat"><span>Most active weekday</span><strong id="most-active-day">—</strong></div><div class="insight-note">Insights reflect the task dates and completion status saved in this workspace.</div></section>
+        </div>
+      </section>
+
+      <section class="page-view" data-view="heatmap">
+        <div class="page-heading"><div><p class="eyebrow">YOUR ACTIVITY</p><h1>Heatmap</h1><p class="subheading">Track daily tasks and build a consistent rhythm.</p></div><div class="streak-pills"><div><span>Current streak</span><strong id="current-streak">0 days</strong></div><div><span>Best streak</span><strong id="best-streak">0 days</strong></div></div></div>
+        <section class="panel full-heatmap-panel"><div class="panel-heading"><div><h2>Daily activity</h2><p>Click any day to view or add tasks for that date.</p></div><span class="year-label">Past 365 days</span></div><div class="full-heatmap-layout"><div class="weekday-labels"><span>Mon</span><span>Wed</span><span>Fri</span></div><div class="heatmap-scroll full-scroll"><div id="month-labels" class="month-labels"></div><div id="full-heatmap" class="heatmap full-heatmap"></div></div></div><div class="heatmap-legend"><span>Less</span><i class="legend-cell"></i><i class="legend-cell lvl-1"></i><i class="legend-cell lvl-2"></i><i class="legend-cell lvl-3"></i><i class="legend-cell lvl-4"></i><span>More</span></div></section>
+        <section class="panel task-panel"><div class="panel-heading"><div><h2 id="selected-date-heading">Tasks for today</h2><p>Keep your daily priorities in one place.</p></div><span id="selected-date-count" class="mini-badge">0 TASKS</span></div><div class="input-row"><input id="task-input" type="text" placeholder="What would you like to work on?" aria-label="New task" /><button id="add-btn" class="button button-primary">Add task <span>+</span></button></div><ul id="task-list"></ul></section>
+      </section>
+
+      <section class="page-view" data-view="analytics">
+        <div class="page-heading"><div><p class="eyebrow">INSIGHTS</p><h1>Analytics</h1><p class="subheading">Understand your consistency from the data you’ve tracked.</p></div><label class="filter-control">TIMEFRAME<select id="analytics-range"><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option><option value="all">All time</option></select></label></div>
+        <div class="kpi-grid analytics-kpis"><article class="kpi-card"><div class="kpi-top"><span>Tasks in range</span><span class="kpi-icon blue">▤</span></div><div class="kpi-value" id="analytics-total">—</div><div class="kpi-foot">Created for selected timeframe</div></article><article class="kpi-card"><div class="kpi-top"><span>Completed</span><span class="kpi-icon green">✓</span></div><div class="kpi-value" id="analytics-completed">—</div><div class="kpi-foot">Tasks marked complete</div></article><article class="kpi-card"><div class="kpi-top"><span>Completion rate</span><span class="kpi-icon amber">◌</span></div><div class="kpi-value" id="analytics-rate">—</div><div class="kpi-foot">Completed out of all tasks</div></article><article class="kpi-card"><div class="kpi-top"><span>Active days</span><span class="kpi-icon violet">▦</span></div><div class="kpi-value" id="analytics-days">—</div><div class="kpi-foot">Days with completed tasks</div></article></div>
+        <div class="content-grid analytics-grid"><section class="panel"><div class="panel-heading"><div><h2>Completion over time</h2><p id="analytics-chart-sub">Daily completed tasks</p></div></div><div id="analytics-chart" class="chart-wrap large-chart"></div></section><section class="panel weekday-panel"><div class="panel-heading"><div><h2>Activity by weekday</h2><p>Completed tasks by day of week</p></div></div><div id="weekday-chart" class="weekday-chart"></div></section></div>
+        <section class="panel"><div class="panel-heading"><div><h2>Recent activity</h2><p>Most recently dated tasks</p></div></div><div class="table-wrap"><table><thead><tr><th>DATE</th><th>TASK</th><th>STATUS</th></tr></thead><tbody id="analytics-recent"></tbody></table></div><div id="analytics-empty" class="empty-state" hidden>No task data available for this timeframe.</div></section>
+      </section>
+      <footer class="app-footer">Heatmap Tracker <span>·</span> Your activity stays on this device</footer>
+    </main>
   </div>
-
-  <div id="heatmap-wrapper">
-    <div id="month-labels" class="month-labels"></div>
-    <div id="heatmap" class="heatmap"></div>
-  </div>
-
-  <div class="input-row">
-    <input id="task-input" type="text" placeholder="Write a task..." />
-    <button id="add-btn">Add Task</button>
-  </div>
-
-  <ul id="task-list"></ul>
-
   <script type="module" src="/main.js"></script>
 </body>
 </html>
