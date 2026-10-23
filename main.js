@@ -60,20 +60,23 @@ function renderHeatmap(rows, heatmap, labels, compact = false) {
   heatmap.replaceChildren();
   labels.replaceChildren();
   const today = daysAgo(0);
-  const start = new Date(today);
-  start.setDate(start.getDate() - 364);
+  const earliestTaskDate = rows.reduce((earliest, task) => task.date < earliest ? task.date : earliest, formatDate(today));
+  const start = compact ? new Date(today) : new Date(`${earliestTaskDate}T00:00:00`);
+  if (compact) start.setDate(start.getDate() - 364);
+  else start.setDate(start.getDate() - start.getDay());
+  const dayCount = Math.max(1, Math.floor((today - start) / 86400000) + 1);
   const leading = start.getDay();
   const counts = {};
   rows.forEach(task => {
     if (task.completed) counts[task.date] = (counts[task.date] || 0) + 1;
   });
   const monthColumns = new Map();
-  for (let offset = 0; offset <= 364; offset++) {
+  for (let offset = 0; offset < dayCount; offset++) {
     const date = new Date(start);
     date.setDate(date.getDate() + offset);
     if (date.getDate() === 1) monthColumns.set(Math.floor((offset + leading) / 7), date.toLocaleString(undefined, { month: 'short' }));
   }
-  const columns = Math.ceil((365 + leading) / 7);
+  const columns = Math.ceil((dayCount + leading) / 7);
   for (let column = 0; column < columns; column++) {
     const slot = document.createElement('div');
     const label = monthColumns.get(column);
@@ -90,7 +93,7 @@ function renderHeatmap(rows, heatmap, labels, compact = false) {
     empty.className = 'cell cell-empty';
     heatmap.append(empty);
   }
-  for (let offset = 0; offset <= 364; offset++) {
+  for (let offset = 0; offset < dayCount; offset++) {
     const date = new Date(start);
     date.setDate(date.getDate() + offset);
     const key = formatDate(date);
@@ -132,13 +135,21 @@ function renderTaskList() {
   dayTasks.forEach(task => {
     const row = document.createElement('li');
     row.className = `task-row${task.completed ? ' completed' : ''}`;
-    row.innerHTML = `<label class="task-main"><input type="checkbox" ${task.completed ? 'checked' : ''} aria-label="Mark ${escapeHtml(task.text)} complete"><span>${escapeHtml(task.text)}</span></label><button class="delete-task" type="button" aria-label="Delete task">Delete</button>`;
+    row.innerHTML = `<label class="task-main"><input type="checkbox" ${task.completed ? 'checked' : ''} aria-label="Mark ${escapeHtml(task.text)} complete"><span>${escapeHtml(task.text)}</span></label><div class="task-actions"><button class="edit-task" type="button" aria-label="Edit task">Edit</button><button class="delete-task" type="button" aria-label="Delete task">Delete</button></div>`;
     row.querySelector('input').addEventListener('change', async event => {
       await db.execute('UPDATE tasks SET completed = $1 WHERE id = $2', [event.target.checked ? 1 : 0, task.id]);
       await loadTasks();
     });
     row.querySelector('.delete-task').addEventListener('click', async () => {
       await db.execute('DELETE FROM tasks WHERE id = $1', [task.id]);
+      await loadTasks();
+    });
+    row.querySelector('.edit-task').addEventListener('click', async () => {
+      const updatedText = window.prompt('Edit task', task.text);
+      if (updatedText === null) return;
+      const text = updatedText.trim();
+      if (!text || text === task.text) return;
+      await db.execute('UPDATE tasks SET text = $1 WHERE id = $2', [text, task.id]);
       await loadTasks();
     });
     list.append(row);
@@ -226,8 +237,8 @@ function renderDashboard(rows) {
 function renderAnalytics(rows) {
   const range = $('#analytics-range').value;
   const limit = range === 'all' ? Infinity : Number(range);
-  const cutoff = formatDate(daysAgo(limit === Infinity ? 36500 : limit - 1));
-  const selected = rows.filter(task => task.date >= cutoff);
+  const cutoff = limit === Infinity ? null : formatDate(daysAgo(limit - 1));
+  const selected = cutoff ? rows.filter(task => task.date >= cutoff) : rows;
   const completed = selected.filter(task => task.completed);
   const activeDays = new Set(completed.map(task => task.date)).size;
   $('#analytics-total').textContent = selected.length.toLocaleString();
