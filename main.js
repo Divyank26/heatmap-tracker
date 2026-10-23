@@ -9,6 +9,7 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 let tasks = [];
 let selectedDate = formatDate(new Date());
+let selectedYear = new Date().getFullYear();
 
 function formatDate(date) {
   const y = date.getFullYear();
@@ -60,11 +61,31 @@ function renderHeatmap(rows, heatmap, labels, compact = false) {
   heatmap.replaceChildren();
   labels.replaceChildren();
   const today = daysAgo(0);
-  const earliestTaskDate = rows.reduce((earliest, task) => task.date < earliest ? task.date : earliest, formatDate(today));
-  const start = compact ? new Date(today) : new Date(`${earliestTaskDate}T00:00:00`);
-  if (compact) start.setDate(start.getDate() - 364);
-  else start.setDate(start.getDate() - start.getDay());
-  const dayCount = Math.max(1, Math.floor((today - start) / 86400000) + 1);
+  const todayKey = formatDate(today);
+  // The dashboard shows a rolling year. The full heatmap shows one calendar
+  // year at a time, chosen with the year picker, so older history stays viewable.
+  let start;
+  let end;
+  if (compact) {
+    start = new Date(today);
+    start.setDate(start.getDate() - 364);
+    end = new Date(today);
+  } else {
+    start = new Date(selectedYear, 0, 1);
+    let endKey = `${selectedYear}-12-31`;
+    if (selectedYear === today.getFullYear()) {
+      // Current year: stop at today, unless tasks already exist on a later date this year.
+      const latestThisYear = rows
+        .map(task => task.date)
+        .filter(date => typeof date === 'string' && date.startsWith(`${selectedYear}-`))
+        .sort()
+        .pop();
+      endKey = latestThisYear && latestThisYear > todayKey ? latestThisYear : todayKey;
+    }
+    end = new Date(`${endKey}T00:00:00`);
+  }
+  // Math.round (not floor) so a daylight-saving change inside the range can't drop the last day.
+  const dayCount = Math.max(1, Math.round((end - start) / 86400000) + 1);
   const leading = start.getDay();
   const counts = {};
   rows.forEach(task => {
@@ -115,7 +136,51 @@ function renderHeatmap(rows, heatmap, labels, compact = false) {
 }
 
 function scrollActiveHeatmapsToEnd() {
-  $$('.page-view.active .heatmap-scroll').forEach(el => { el.scrollLeft = el.scrollWidth; });
+  const currentYear = new Date().getFullYear();
+  const fullHeatmap = $('#full-heatmap');
+  $$('.page-view.active .heatmap-scroll').forEach(el => {
+    // Past years read left-to-right from January; the current year jumps to today.
+    const pastYear = fullHeatmap && el.contains(fullHeatmap) && selectedYear !== currentYear;
+    el.scrollLeft = pastYear ? 0 : el.scrollWidth;
+  });
+}
+
+async function refreshYearPicker() {
+  const select = $('#heatmap-year');
+  const currentYear = new Date().getFullYear();
+  let firstYear = currentYear;
+  let lastYear = currentYear;
+  tasks.forEach(task => {
+    const year = Number(String(task.date).slice(0, 4));
+    if (!Number.isInteger(year) || year < 1970) return;
+    if (year < firstYear) firstYear = year;
+    if (year > lastYear) lastYear = year;
+  });
+  try {
+    // Remember the first year the app was used, so the list still reaches back
+    // that far even if the tasks from that year are later deleted.
+    const stored = Number(await getSetting('firstUseYear'));
+    if (Number.isInteger(stored) && stored >= 1970 && stored < firstYear) firstYear = stored;
+    if (stored !== firstYear) await setSetting('firstUseYear', String(firstYear));
+  } catch (error) {
+    console.error('Unable to read first-use year:', error);
+  }
+  selectedYear = Math.min(Math.max(selectedYear, firstYear), lastYear);
+  select.replaceChildren();
+  for (let year = firstYear; year <= lastYear; year++) {
+    const option = document.createElement('option');
+    option.value = String(year);
+    option.textContent = String(year);
+    select.append(option);
+  }
+  select.value = String(selectedYear);
+}
+
+function renderYearSummary() {
+  const prefix = `${selectedYear}-`;
+  const done = tasks.filter(task => task.completed && String(task.date).startsWith(prefix));
+  const days = new Set(done.map(task => task.date)).size;
+  $('#year-summary').textContent = `${done.length} completed ${done.length === 1 ? 'task' : 'tasks'} across ${days} active ${days === 1 ? 'day' : 'days'} in ${selectedYear}`;
 }
 
 function renderTaskList() {
@@ -282,8 +347,10 @@ async function loadTasks() {
   try {
     tasks = await db.select('SELECT * FROM tasks');
     $('#dashboard-error').hidden = true;
+    await refreshYearPicker();
     renderDashboard(tasks);
     renderHeatmap(tasks, $('#full-heatmap'), $('#month-labels'));
+    renderYearSummary();
     renderTaskList();
   } catch (error) {
     console.error('Unable to load tracker data:', error);
@@ -347,13 +414,25 @@ $('#task-input').addEventListener('keydown', event => {
   if (event.key === 'Enter' && !event.isComposing) $('#add-btn').click();
 });
 $('#analytics-range').addEventListener('change', () => renderAnalytics(tasks));
+$('#heatmap-year').addEventListener('change', event => {
+  selectedYear = Number(event.target.value);
+  const now = new Date();
+  selectedDate = selectedYear === now.getFullYear() ? formatDate(now) : `${selectedYear}-01-01`;
+  renderHeatmap(tasks, $('#full-heatmap'), $('#month-labels'));
+  renderYearSummary();
+  renderTaskList();
+  scrollActiveHeatmapsToEnd();
+});
 window.addEventListener('hashchange', navigate);
 $('#dashboard-heatmap').addEventListener('click', () => { location.hash = '#heatmap'; });
 let currentDay = formatDate(new Date());
 function checkDayChange() {
   const today = formatDate(new Date());
   if (today === currentDay) return;
-  if (selectedDate === currentDay) selectedDate = today;
+  if (selectedDate === currentDay) {
+    selectedDate = today;
+    selectedYear = new Date().getFullYear();
+  }
   currentDay = today;
   loadTasks();
 }
