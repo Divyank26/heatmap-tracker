@@ -1,6 +1,37 @@
 import Database from '@tauri-apps/plugin-sql';
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
 
+// Theme. Runs before the database loads so the toggle works immediately.
+// index.html applies the saved theme before first paint; this keeps it in sync.
+// With no saved choice the app follows the OS setting, live; clicking the toggle saves a choice.
+const THEME_KEY = 'theme';
+const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+function savedTheme() {
+  try {
+    const value = localStorage.getItem(THEME_KEY);
+    return value === 'light' || value === 'dark' ? value : null;
+  } catch {
+    return null;
+  }
+}
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  const label = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+  const toggle = document.querySelector('#theme-toggle');
+  toggle.setAttribute('aria-label', label);
+  toggle.title = label;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0e1318' : '#f6f8fb');
+}
+applyTheme(savedTheme() ?? (systemDark.matches ? 'dark' : 'light'));
+document.querySelector('#theme-toggle').addEventListener('click', () => {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem(THEME_KEY, next); } catch (error) { console.error('Unable to save theme:', error); }
+  applyTheme(next);
+});
+systemDark.addEventListener('change', event => {
+  if (!savedTheme()) applyTheme(event.matches ? 'dark' : 'light');
+});
+
 const db = await Database.load('sqlite:heatmap.db');
 await db.execute(`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, date TEXT NOT NULL, text TEXT NOT NULL, completed INTEGER DEFAULT 0)`);
 await db.execute(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
@@ -54,12 +85,11 @@ function calculateStreaks(rows) {
   return { currentStreak, bestStreak };
 }
 
-function renderHeatmap(rows, heatmap, labels, compact = false) {
-  if (!heatmap || !labels) return;
+function renderHeatmap(rows, heatmap, compact = false) {
+  if (!heatmap) return;
   const scroller = heatmap.closest('.heatmap-scroll');
   const previousScroll = scroller ? scroller.scrollLeft : 0;
   heatmap.replaceChildren();
-  labels.replaceChildren();
   const today = daysAgo(0);
   const todayKey = formatDate(today);
   // The dashboard shows a rolling year. The full heatmap shows one calendar
@@ -84,53 +114,56 @@ function renderHeatmap(rows, heatmap, labels, compact = false) {
     }
     end = new Date(`${endKey}T00:00:00`);
   }
-  // Math.round (not floor) so a daylight-saving change inside the range can't drop the last day.
-  const dayCount = Math.max(1, Math.round((end - start) / 86400000) + 1);
-  const leading = start.getDay();
   const counts = {};
   rows.forEach(task => {
     if (task.completed) counts[task.date] = (counts[task.date] || 0) + 1;
   });
-  const monthColumns = new Map();
-  for (let offset = 0; offset < dayCount; offset++) {
-    const date = new Date(start);
-    date.setDate(date.getDate() + offset);
-    if (date.getDate() === 1) monthColumns.set(Math.floor((offset + leading) / 7), date.toLocaleString(undefined, { month: 'short' }));
-  }
-  const columns = Math.ceil((dayCount + leading) / 7);
-  for (let column = 0; column < columns; column++) {
-    const slot = document.createElement('div');
-    const label = monthColumns.get(column);
-    if (label) {
-      const text = document.createElement('span');
-      text.className = 'month-label';
-      text.textContent = label;
-      slot.append(text);
+  // Each month is its own block (label on top, weeks as columns beneath), the
+  // way LeetCode draws it, so month boundaries are visible without hovering.
+  // A week that straddles two months appears in both blocks.
+  for (let monthIndex = start.getMonth(), year = start.getFullYear(); ; monthIndex++) {
+    const firstOfMonth = new Date(year, monthIndex, 1);
+    if (firstOfMonth > end) break;
+    const isFirstBlock = firstOfMonth < start;
+    const blockStart = isFirstBlock ? start : firstOfMonth;
+    const lastOfMonth = new Date(firstOfMonth.getFullYear(), firstOfMonth.getMonth() + 1, 0);
+    const blockEnd = lastOfMonth > end ? end : lastOfMonth;
+    const block = document.createElement('div');
+    block.className = 'month-block';
+    block.setAttribute('role', 'group');
+    block.setAttribute('aria-label', firstOfMonth.toLocaleString(undefined, { month: 'long', year: 'numeric' }));
+    const label = document.createElement('span');
+    label.className = 'month-label';
+    // A rolling year can begin and end in the same month; label only the latest one.
+    const duplicateOfLast = compact && isFirstBlock && firstOfMonth.getMonth() === end.getMonth();
+    label.textContent = duplicateOfLast ? '' : firstOfMonth.toLocaleString(undefined, { month: 'short' });
+    const grid = document.createElement('div');
+    grid.className = 'month-grid';
+    for (let i = 0; i < blockStart.getDay(); i++) {
+      const empty = document.createElement('div');
+      empty.className = 'cell cell-empty';
+      grid.append(empty);
     }
-    labels.append(slot);
-  }
-  for (let i = 0; i < leading; i++) {
-    const empty = document.createElement('div');
-    empty.className = 'cell cell-empty';
-    heatmap.append(empty);
-  }
-  for (let offset = 0; offset < dayCount; offset++) {
-    const date = new Date(start);
-    date.setDate(date.getDate() + offset);
-    const key = formatDate(date);
-    const count = counts[key] || 0;
-    const cell = document.createElement('button');
-    cell.type = 'button';
-    cell.className = `cell${count >= 1 ? ' lvl-1' : ''}${count >= 3 ? ' lvl-2' : ''}${count >= 5 ? ' lvl-3' : ''}${count >= 8 ? ' lvl-4' : ''}`;
-    cell.title = `${count} completed ${count === 1 ? 'task' : 'tasks'} on ${key}`;
-    cell.setAttribute('aria-label', cell.title);
-    if (key === selectedDate && !compact) cell.classList.add('selected-cell');
-    if (!compact) cell.addEventListener('click', () => {
-      selectedDate = key;
-      renderHeatmap(tasks, $('#full-heatmap'), $('#month-labels'));
-      renderTaskList();
-    });
-    heatmap.append(cell);
+    const dayNumbers = { from: blockStart.getDate(), to: blockEnd.getDate() };
+    for (let dayOfMonth = dayNumbers.from; dayOfMonth <= dayNumbers.to; dayOfMonth++) {
+      const date = new Date(firstOfMonth.getFullYear(), firstOfMonth.getMonth(), dayOfMonth);
+      const key = formatDate(date);
+      const count = counts[key] || 0;
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = `cell${count >= 1 ? ' lvl-1' : ''}${count >= 3 ? ' lvl-2' : ''}${count >= 5 ? ' lvl-3' : ''}${count >= 8 ? ' lvl-4' : ''}`;
+      cell.title = `${count} completed ${count === 1 ? 'task' : 'tasks'} on ${key}`;
+      cell.setAttribute('aria-label', cell.title);
+      if (key === selectedDate && !compact) cell.classList.add('selected-cell');
+      if (!compact) cell.addEventListener('click', () => {
+        selectedDate = key;
+        renderHeatmap(tasks, $('#full-heatmap'));
+        renderTaskList();
+      });
+      grid.append(cell);
+    }
+    block.append(label, grid);
+    heatmap.append(block);
   }
   if (scroller && previousScroll) scroller.scrollLeft = previousScroll;
 }
@@ -265,7 +298,7 @@ function renderLineChart(target, series, labels, large = false) {
     return `<text x="${point.x}" y="${height - 7}" class="axis-label" text-anchor="middle">${labels[dataIndex]}</text>`;
   }).join('');
   const dots = points.map((point, index) => `<circle cx="${point.x}" cy="${point.y}" r="${series.length <= 20 ? 3.5 : 2}" class="chart-point"><title>${labels[index]}: ${series[index]} completed</title></circle>`).join('');
-  host.innerHTML = `<svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Completed tasks over time"><defs><linearGradient id="${gradientId}" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#47b881" stop-opacity=".2"/><stop offset="100%" stop-color="#47b881" stop-opacity="0"/></linearGradient></defs>${grid}<polygon points="${area}" class="chart-area" fill="url(#${gradientId})"/><polyline points="${polyline}" class="chart-line"/>${dots}${ticks}</svg>`;
+  host.innerHTML = `<svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Completed tasks over time"><defs><linearGradient id="${gradientId}" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" class="chart-stop" stop-opacity=".2"/><stop offset="100%" class="chart-stop" stop-opacity="0"/></linearGradient></defs>${grid}<polygon points="${area}" class="chart-area" fill="url(#${gradientId})"/><polyline points="${polyline}" class="chart-line"/>${dots}${ticks}</svg>`;
 }
 
 function renderDashboard(rows) {
@@ -287,7 +320,7 @@ function renderDashboard(rows) {
   const peak = Math.max(...weekdayCounts);
   $('#most-active-day').textContent = peak ? ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][weekdayCounts.indexOf(peak)] : 'No activity yet';
 
-  renderHeatmap(rows, $('#dashboard-heatmap'), $('#dashboard-month-labels'), true);
+  renderHeatmap(rows, $('#dashboard-heatmap'), true);
   const trendSeries = Array.from({ length: 14 }, (_, index) => {
     const day = formatDate(daysAgo(13 - index));
     return completed.filter(task => task.date === day).length;
@@ -349,7 +382,7 @@ async function loadTasks() {
     $('#dashboard-error').hidden = true;
     await refreshYearPicker();
     renderDashboard(tasks);
-    renderHeatmap(tasks, $('#full-heatmap'), $('#month-labels'));
+    renderHeatmap(tasks, $('#full-heatmap'));
     renderYearSummary();
     renderTaskList();
   } catch (error) {
@@ -418,7 +451,7 @@ $('#heatmap-year').addEventListener('change', event => {
   selectedYear = Number(event.target.value);
   const now = new Date();
   selectedDate = selectedYear === now.getFullYear() ? formatDate(now) : `${selectedYear}-01-01`;
-  renderHeatmap(tasks, $('#full-heatmap'), $('#month-labels'));
+  renderHeatmap(tasks, $('#full-heatmap'));
   renderYearSummary();
   renderTaskList();
   scrollActiveHeatmapsToEnd();
